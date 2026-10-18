@@ -21,12 +21,15 @@ import android.annotation.SuppressLint
 import android.app.GameManager
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.UserHandle
 import android.util.Log
 import android.view.WindowManager
 import com.android.axion.platform.AxPlatformClient
@@ -35,6 +38,7 @@ import com.google.gson.Gson
 import io.chaldeaprjkt.gamespace.data.AppSettings
 import io.chaldeaprjkt.gamespace.data.GameSession
 import io.chaldeaprjkt.gamespace.data.SystemSettings
+import io.chaldeaprjkt.gamespace.data.UserGame
 import io.chaldeaprjkt.gamespace.gamebar.brightness.BrightnessInteractor
 import io.chaldeaprjkt.gamespace.gamebar.fps.FpsInteractor
 import io.chaldeaprjkt.gamespace.gamebar.mapper.MapperController
@@ -65,6 +69,22 @@ class SessionService : Hilt_SessionService() {
 
     private var dndEnabledByUs = false
     private var previousDndFilter = NotificationManager.INTERRUPTION_FILTER_ALL
+
+    private val sidebarCommandReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ACTION_SHOW_GAME_PANEL -> {
+                    val dockedOnLeft = intent.getBooleanExtra("dockedOnLeft", false)
+                    val dockWidthDp = intent.getIntExtra("dockWidthDp", 60)
+                    val dockTopY = intent.getIntExtra("dockTopY", 0)
+                    sidebar.showGamePanelFromSidebar(dockedOnLeft, dockWidthDp, dockTopY)
+                }
+                ACTION_DISMISS_GAME_PANEL -> {
+                    sidebar.requestDismissPanel()
+                }
+            }
+        }
+    }
 
     @SuppressLint("WrongConstant")
     override fun onCreate() {
@@ -105,15 +125,27 @@ class SessionService : Hilt_SessionService() {
             mapperController = mapperController,
         )
         sidebar.onCreate()
+
+        val filter = IntentFilter().apply {
+            addAction(ACTION_SHOW_GAME_PANEL)
+            addAction(ACTION_DISMISS_GAME_PANEL)
+        }
+        registerReceiver(sidebarCommandReceiver, filter, Context.RECEIVER_EXPORTED)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_START) {
-            val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME)
-            if (packageName != null) {
-                startGameSession(packageName)
-            } else {
-                Log.e(TAG, "No package name provided, stopping")
+        when (intent?.action) {
+            ACTION_START -> {
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME)
+                if (packageName != null) {
+                    startGameSession(packageName)
+                } else {
+                    Log.e(TAG, "No package name provided, stopping")
+                    stopSelf()
+                }
+            }
+            ACTION_STOP -> {
+                stopGameSession()
                 stopSelf()
             }
         }
@@ -147,11 +179,40 @@ class SessionService : Hilt_SessionService() {
 
         sidebar.onGameStart(packageName)
 
+        runCatching {
+            android.provider.Settings.Secure.putStringForUser(
+                contentResolver,
+                "gamespace_active_game",
+                packageName,
+                UserHandle.USER_CURRENT
+            )
+        }
+
+        val gameIntent = Intent("io.chaldeaprjkt.gamespace.action.GAME_SESSION_STATE").apply {
+            putExtra("active", true)
+            putExtra("package", packageName)
+        }
+        sendBroadcastAsUser(gameIntent, UserHandle.ALL)
+
         callListener.init()
     }
 
     private fun stopGameSession() {
         Log.i(TAG, "Stopping game session")
+
+        runCatching {
+            android.provider.Settings.Secure.putStringForUser(
+                contentResolver,
+                "gamespace_active_game",
+                "",
+                UserHandle.USER_CURRENT
+            )
+        }
+
+        val gameIntent = Intent("io.chaldeaprjkt.gamespace.action.GAME_SESSION_STATE").apply {
+            putExtra("active", false)
+        }
+        sendBroadcastAsUser(gameIntent, UserHandle.ALL)
 
         sidebar.onGameLeave()
         session.unregister()
@@ -184,16 +245,23 @@ class SessionService : Hilt_SessionService() {
         val userGame = settings.userGames.firstOrNull { it.packageName == app }
         val preferred = userGame?.mode ?: GameModeUtils.defaultPreferredMode
         
-        gameModeUtils.activeGame = userGame
+        gameModeUtils.activeGame = userGame ?: UserGame(app, preferred)
         
-        val availableModes = gameManager.getAvailableGameModes(app)
-        if (availableModes.contains(preferred)) {
-            gameManager.setGameMode(app, preferred)
+        try {
+            val availableModes = gameManager.getAvailableGameModes(app)
+            if (availableModes.contains(preferred)) {
+                gameManager.setGameMode(app, preferred)
+            } else {
+                gameManager.setGameMode(app, preferred)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to applyGameModeConfig for $app", e)
         }
     }
 
     override fun onDestroy() {
         Log.d(TAG, "SessionService destroyed")
+        runCatching { unregisterReceiver(sidebarCommandReceiver) }
         stopGameSession()
         tileRepository.dispose()
         gameModeUtils.unbind()
@@ -206,6 +274,9 @@ class SessionService : Hilt_SessionService() {
     companion object {
         const val TAG = "SessionService"
         const val ACTION_START = "game_start"
+        const val ACTION_STOP = "game_stop"
         const val EXTRA_PACKAGE_NAME = "package_name"
+        const val ACTION_SHOW_GAME_PANEL = "io.chaldeaprjkt.gamespace.action.SHOW_GAME_PANEL"
+        const val ACTION_DISMISS_GAME_PANEL = "io.chaldeaprjkt.gamespace.action.DISMISS_GAME_PANEL"
     }
 }

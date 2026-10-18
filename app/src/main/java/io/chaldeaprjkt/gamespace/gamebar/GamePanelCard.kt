@@ -93,7 +93,11 @@ private val TAG = "GamePanelCard"
 fun GamePanelCard(
     interactor: BrightnessInteractor,
     fpsInteractor: FpsInteractor,
-    apps: List<AppInfo>,
+    showFps: Boolean = false,
+    fpsText: String = "",
+    onToggleFps: () -> Unit = {},
+    isLocked: Boolean = false,
+    onToggleLock: () -> Unit = {},
     gameModeUtils: GameModeUtils,
     systemSettings: SystemSettings,
     tileRepository: TileRepository,
@@ -124,7 +128,6 @@ fun GamePanelCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
         GamePanelContent(
-            apps = apps,
             headerExpanded = headerExpanded,
             onToggleExpand = { headerExpanded = !headerExpanded },
             selectedMode = selectedMode,
@@ -134,6 +137,11 @@ fun GamePanelCard(
             },
             interactor = interactor,
             fpsInteractor = fpsInteractor,
+            showFps = showFps,
+            fpsText = fpsText,
+            onToggleFps = onToggleFps,
+            isLocked = isLocked,
+            onToggleLock = onToggleLock,
             time = time,
             tileRepository = tileRepository,
             maxHeight = maxHeight,
@@ -143,13 +151,17 @@ fun GamePanelCard(
 
 @Composable
 fun GamePanelContent(
-    apps: List<AppInfo>,
     headerExpanded: Boolean,
     onToggleExpand: () -> Unit,
     selectedMode: GameMode,
     onModeChange: (GameMode) -> Unit,
     interactor: BrightnessInteractor,
     fpsInteractor: FpsInteractor,
+    showFps: Boolean,
+    fpsText: String,
+    onToggleFps: () -> Unit,
+    isLocked: Boolean,
+    onToggleLock: () -> Unit,
     time: String,
     tileRepository: TileRepository,
     maxHeight: Dp = Dp.Unspecified,
@@ -175,6 +187,11 @@ fun GamePanelContent(
                 modifier = Modifier.fillMaxWidth(),
                 headerExpanded = headerExpanded,
                 time = time,
+                showFps = showFps,
+                fpsText = fpsText,
+                onToggleFps = onToggleFps,
+                isLocked = isLocked,
+                onToggleLock = onToggleLock,
                 currentMode = selectedMode,
                 onModeChange = onModeChange,
                 fpsInteractor = fpsInteractor,
@@ -182,10 +199,6 @@ fun GamePanelContent(
                 onEditClick = { isEditing = true },
                 tileRepository = tileRepository
             )
-
-            if (apps.isEmpty() == false) {
-                QuickStartAppSidebar(apps = apps)
-            }
 
             PanelContent(
                 interactor = interactor,
@@ -299,6 +312,11 @@ fun HeaderInfoBar(
     modifier: Modifier = Modifier,
     headerExpanded: Boolean = true,
     time: String,
+    showFps: Boolean,
+    fpsText: String,
+    onToggleFps: () -> Unit,
+    isLocked: Boolean,
+    onToggleLock: () -> Unit,
     currentMode: GameMode,
     onModeChange: (GameMode) -> Unit,
     fpsInteractor: FpsInteractor,
@@ -339,6 +357,11 @@ fun HeaderInfoBar(
         ) {
             TopRowHeader(
                 time = time,
+                showFps = showFps,
+                fpsText = fpsText,
+                onToggleFps = onToggleFps,
+                isLocked = isLocked,
+                onToggleLock = onToggleLock,
                 headerExpanded = headerExpanded,
                 onToggleExpand = onToggleExpand,
                 onEditClick = onEditClick
@@ -386,6 +409,11 @@ fun HeaderInfoBar(
 @Composable
 private fun TopRowHeader(
     time: String,
+    showFps: Boolean,
+    fpsText: String,
+    onToggleFps: () -> Unit,
+    isLocked: Boolean,
+    onToggleLock: () -> Unit,
     headerExpanded: Boolean,
     onToggleExpand: () -> Unit,
     onEditClick: () -> Unit
@@ -402,29 +430,75 @@ private fun TopRowHeader(
         Text(
             text = time,
             style = MaterialTheme.typography.titleMedium,
-            fontSize = 18.sp
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp
         )
 
         Spacer(modifier = Modifier.weight(1f))
 
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = if (showFps) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onToggleFps() }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = if (fpsText.isNotBlank()) "$fpsText FPS" else "FPS",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (showFps) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        IconButton(
+            onClick = onToggleLock,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                painter = painterResource(
+                    if (isLocked) R.drawable.materialsymbols_ic_lock_rounded_filled
+                    else R.drawable.materialsymbols_ic_lock_open_rounded_filled
+                ),
+                contentDescription = "Gesture Lock",
+                tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
         IconButton(
             onClick = onEditClick,
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(28.dp)
         ) {
             Icon(
                 painter = painterResource(R.drawable.materialsymbols_ic_edit_rounded_filled),
-                contentDescription = stringResource(R.string.cd_edit_tiles)
+                contentDescription = stringResource(R.string.cd_edit_tiles),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
         IconButton(
             onClick = onToggleExpand,
-            modifier = Modifier.size(36.dp)
+            modifier = Modifier.size(28.dp)
         ) {
             Icon(
                 painter = painterResource(R.drawable.materialsymbols_ic_expand_more_rounded_filled),
                 contentDescription = if (headerExpanded) stringResource(R.string.cd_collapse) else stringResource(R.string.cd_expand),
-                modifier = Modifier.rotate(rotateArrow)
+                modifier = Modifier
+                    .rotate(rotateArrow)
+                    .size(22.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -1368,4 +1442,51 @@ data class BatteryInfo(
     val level: Int = -1,
     val temperatureC: Float = 0f
 )
+
+@Composable
+fun GameAppsDock(
+    apps: List<AppInfo>,
+    onLaunchApp: (AppInfo) -> Unit,
+    maxHeight: Dp = Dp.Unspecified,
+    modifier: Modifier = Modifier,
+) {
+    val scrollState = rememberScrollState()
+    Card(
+        modifier = modifier
+            .width(58.dp)
+            .heightIn(max = if (maxHeight != Dp.Unspecified) maxHeight else 420.dp)
+            .wrapContentHeight(),
+        shape = RoundedCornerShape(26.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.12f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(vertical = 10.dp, horizontal = 7.dp)
+                .verticalScroll(scrollState),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            apps.forEach { app ->
+                val painter = rememberDrawablePainter(app.icon)
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .clickable { onLaunchApp(app) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painter,
+                        contentDescription = app.name,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+            }
+        }
+    }
+}
 

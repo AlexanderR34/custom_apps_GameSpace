@@ -20,35 +20,65 @@ import android.provider.Settings;
 import android.os.UserHandle;
 import android.util.AttributeSet;
 
-import lineageos.preference.SelfRemovingSwitchPreference;
+import androidx.preference.PreferenceDataStore;
+import androidx.preference.SwitchPreferenceCompat;
 
-public class SystemSettingSwitchPreference extends SelfRemovingSwitchPreference {
+public class SystemSettingSwitchPreference extends SwitchPreferenceCompat {
 
     public SystemSettingSwitchPreference(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
+        setPreferenceDataStore(new DataStore());
     }
 
     public SystemSettingSwitchPreference(Context context, AttributeSet attrs) {
         super(context, attrs);
+        setPreferenceDataStore(new DataStore());
     }
 
     public SystemSettingSwitchPreference(Context context) {
         super(context);
+        setPreferenceDataStore(new DataStore());
     }
 
-    @Override
     protected boolean isPersisted() {
         return Settings.System.getString(getContext().getContentResolver(), getKey()) != null;
     }
 
-    @Override
     protected void putBoolean(String key, boolean value) {
         Settings.System.putIntForUser(getContext().getContentResolver(), key, value ? 1 : 0, UserHandle.USER_CURRENT);
     }
 
-    @Override
     protected boolean getBoolean(String key, boolean defaultValue) {
         return Settings.System.getIntForUser(getContext().getContentResolver(),
                 key, defaultValue ? 1 : 0, UserHandle.USER_CURRENT) != 0;
+    }
+
+    @Override
+    protected void onSetInitialValue(Object defaultValue) {
+        final boolean checked;
+        if (!isPersisted()) {
+            if (defaultValue == null) {
+                return;
+            }
+            checked = (boolean) defaultValue;
+            if (shouldPersist()) {
+                persistBoolean(checked);
+            }
+        } else {
+            checked = getBoolean(getKey(), false);
+        }
+        setChecked(checked);
+    }
+
+    private class DataStore extends PreferenceDataStore {
+        @Override
+        public void putBoolean(String key, boolean value) {
+            SystemSettingSwitchPreference.this.putBoolean(key, value);
+        }
+
+        @Override
+        public boolean getBoolean(String key, boolean defaultValue) {
+            return SystemSettingSwitchPreference.this.getBoolean(key, defaultValue);
+        }
     }
 }

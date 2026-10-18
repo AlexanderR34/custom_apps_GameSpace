@@ -36,7 +36,13 @@
         <permission name="android.permission.BLUETOOTH" />
         <permission name="android.permission.BLUETOOTH_ADMIN" />
         <permission name="android.permission.MODIFY_PHONE_STATE" />
+        <permission name="android.permission.INJECT_EVENTS" />
+        <permission name="android.permission.MONITOR_INPUT" />
         <permission name="android.permission.DELETE_CACHE_FILES" />
-        <permission name="android.permission.MODIFY_AUDIO_ROUTING"/>
+        <permission name="android.permission.READ_PHONE_NUMBERS" />
+        <permission name="android.permission.READ_CALL_LOG" />
+        <permission name="android.permission.READ_CONTACTS" />
+        <permission name="android.permission.MODIFY_AUDIO_ROUTING" />
+        <permission name="com.android.systemui.permission.SCREEN_RECORDING" />
     </privapp-permissions>
 </permissions>

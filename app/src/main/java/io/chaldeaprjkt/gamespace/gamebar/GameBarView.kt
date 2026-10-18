@@ -143,6 +143,15 @@ fun GameBarView(
                     if (!repositioning &&
                         (abs(accDragY) > dragThresholdPx || abs(accDragX) > dragThresholdPx)
                     ) {
+                        val isSwipeInward = if (dockedOnLeft) {
+                            accDragX > dragThresholdPx * 1.5f && abs(accDragY) < abs(accDragX)
+                        } else {
+                            accDragX < -dragThresholdPx * 1.5f && abs(accDragY) < abs(accDragX)
+                        }
+                        if (isSwipeInward) {
+                            onShowPanel()
+                            return@detectDragGestures
+                        }
                         repositioning = true
                     }
                     if (repositioning) {
@@ -184,8 +193,7 @@ fun GameBarView(
                     idleAlpha = animatedPillAlpha,
                     pointerModifier = pointerModifier,
                     onTap = {
-                        state.setTargetScene(GameBarScenes.VerticalPill, scope)
-                        onExpanded()
+                        onShowPanel()
                     },
                     modifier = Modifier.element(GameBarElements.PillContent),
                 )

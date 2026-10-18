@@ -82,7 +82,7 @@ class PlatformTile(
 
     override val label: String get() = labelState.value
     override val isEnabled: Boolean get() = activeState.value
-    @Composable override fun observeEnabled(): State<Boolean> = rememberUpdatedState(activeState.value)
+    @Composable override fun observeEnabled(): State<Boolean> = activeState
 
     override fun toggle() {
         platform.toggle(feature)

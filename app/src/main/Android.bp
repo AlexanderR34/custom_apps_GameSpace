@@ -14,7 +14,6 @@ android_app {
         "java/**/*.kt",
     ],
     static_libs: [
-        "ax_compose",
         "androidx.core_core-ktx",
         "androidx.appcompat_appcompat",
         "androidx.preference_preference",
@@ -23,13 +22,11 @@ android_app {
         "kotlinx-coroutines-android",
         "gson",
         "hilt_android",
-        "org.lineageos.platform.internal",
-        "LineagePreferenceLib",
         "androidx.activity_activity-compose",
         "androidx.compose.animation_animation-core",
         "androidx.compose.animation_animation-graphics",
         "androidx.compose.foundation_foundation",
-        "ax.androidx.compose.material3_material3",
+        "androidx.compose.material3_material3",
         "androidx.compose.material3_material3-window-size-class",
         "androidx.compose.material_material-icons-core",
         "androidx.compose.material_material-icons-extended",
@@ -38,10 +35,9 @@ android_app {
         "androidx.lifecycle_lifecycle-viewmodel-compose",
         "androidx.lifecycle_lifecycle-runtime-compose",
         "kotlinx-coroutines-core",
-        "com.composables_icons-material-symbols-rounded-filled-android",
-        "ax_platform_hooks",
         "androidx.palette_palette",
         "PlatformComposeSceneTransitionLayout",
+        "com.composables_icons-material-symbols-rounded-filled-android",
     ],
 
     kotlincflags: [
@@ -68,3 +64,10 @@ prebuilt_etc_xml {
     filename_from_src: true,
     sub_dir: "permissions",
 }
+
+android_library_import {
+    name: "com.composables_icons-material-symbols-rounded-filled-android",
+    aars: ["libs/icons-material-symbols-rounded-filled-android-2.2.1.aar"],
+    sdk_version: "current",
+}
+

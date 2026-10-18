@@ -120,12 +120,10 @@ class GameSidebar(
 
     private val taskFpsCallback = object : TaskFpsCallback() {
         override fun onFpsReported(fps: Float) {
-            if (::gameBarView.isInitialized && gameBarView.isAttachedToWindow) {
-                val formatted = DecimalFormat("#").apply {
-                    roundingMode = RoundingMode.HALF_EVEN
-                }.format(fps)
-                handler.post { fpsTextState.value = formatted }
-            }
+            val formatted = DecimalFormat("#").apply {
+                roundingMode = RoundingMode.HALF_EVEN
+            }.format(fps)
+            handler.post { fpsTextState.value = formatted }
         }
     }
 
@@ -220,14 +218,7 @@ class GameSidebar(
         }
         platform.addListener(recordingListener)
         handler.post {
-            if (!::gameBarView.isInitialized) return@post
-            runCatching {
-                dockGameBar()
-                wm.addView(gameBarView, gameBarLayoutParam)
-                gameBarView.visibility = View.INVISIBLE
-                gameBarView.alpha = 0f
-                handler.postDelayed(firstPaint, 500)
-            }
+            initActions()
         }
     }
 
@@ -239,7 +230,11 @@ class GameSidebar(
         setGestureLock(false)
         handler.removeCallbacksAndMessages(null)
         forceRemovePanel()
-        runCatching { wm.removeViewImmediate(gameBarView) }
+        runCatching {
+            if (::gameBarView.isInitialized && gameBarView.isAttachedToWindow) {
+                wm.removeViewImmediate(gameBarView)
+            }
+        }
     }
 
     fun setGestureLock(value: Boolean) {
@@ -256,14 +251,51 @@ class GameSidebar(
         mapperController.onConfigurationChanged(newConfig)
         updateScreenMetrics()
         forceRemovePanel()
-        if (gameBarView.visibility != View.VISIBLE) {
-            handler.removeCallbacks(firstPaint)
-            handler.postDelayed({ firstPaint.run() }, 100)
-        } else {
-            dockGameBar()
-            runCatching { wm.updateViewLayout(gameBarView, gameBarLayoutParam) }
-        }
         danmakuService.updateConfiguration(newConfig)
+    }
+
+    fun showGamePanelFromSidebar(dockedOnLeft: Boolean, dockWidthDp: Int, dockTopY: Int) {
+        handler.post {
+            circleOnLeft = dockedOnLeft
+            dockedOnLeftState.value = dockedOnLeft
+
+            val density = context.resources.displayMetrics.density
+            val insets = wm.currentWindowMetrics.windowInsets
+            val navInsets = insets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.navigationBars())
+            val cutoutInsets = insets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.displayCutout())
+            val sideInset = if (circleOnLeft) {
+                maxOf(navInsets.left, cutoutInsets.left)
+            } else {
+                maxOf(navInsets.right, cutoutInsets.right)
+            }
+            val extraOffsetDp = if (circleOnLeft) 12 else 30
+            val dockOffsetPx = sideInset + ((dockWidthDp + extraOffsetDp) * density).toInt()
+            val panelWidthPx = (300 * density).toInt()
+
+            val screenBounds = wm.maximumWindowMetrics.bounds
+            val centerY = screenBounds.height() / 2
+            val navBottomPx = context.resources.getDimensionPixelSize(
+                com.android.internal.R.dimen.navigation_bar_height
+            )
+            val topPx = (centerY + dockTopY - (380 * density / 2).toInt())
+                .coerceIn(safeArea, (screenBounds.height() - navBottomPx - (390 * density).toInt()).coerceAtLeast(safeArea))
+
+            panelLayoutParam.apply {
+                width = panelWidthPx
+                height = WindowManager.LayoutParams.WRAP_CONTENT
+                gravity = Gravity.TOP or (if (circleOnLeft) Gravity.START else Gravity.END)
+                x = dockOffsetPx
+                y = topPx
+                flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                format = PixelFormat.TRANSLUCENT
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                preferMinimalPostProcessing = true
+            }
+
+            showPanel()
+        }
     }
 
     private fun showPanel() {
@@ -285,7 +317,6 @@ class GameSidebar(
             Process.setThreadGroupAndCpuset(Process.myTid(), Process.THREAD_GROUP_SYSTEM)
             Process.setProcessGroup(Process.myPid(), Process.THREAD_GROUP_SYSTEM)
             wm.addView(pv, panelLayoutParam)
-            gameBarView.visibility = View.GONE
         } catch (_: Exception) {
             brightnessInteractor.dispose()
             fpsInteractor.dispose()
@@ -293,8 +324,10 @@ class GameSidebar(
         }
     }
 
-    private fun requestDismissPanel() {
-        panelDismissing.value = true
+    fun requestDismissPanel() {
+        handler.post {
+            panelDismissing.value = true
+        }
     }
 
     private fun removePanelAndRestoreCircle() {
@@ -313,10 +346,33 @@ class GameSidebar(
             Process.setThreadGroupAndCpuset(Process.myTid(), Process.THREAD_GROUP_BACKGROUND)
             Process.setProcessGroup(Process.myPid(), Process.THREAD_GROUP_BACKGROUND)
         }
+    }
 
-        if (!shouldClose) {
-            gameBarView.visibility = View.VISIBLE
-            scheduleIdle()
+    private fun showStockPanel() {
+        val density = context.resources.displayMetrics.density
+        val panelWidthPx = (300 * density).toInt()
+        val screenBounds = wm.maximumWindowMetrics.bounds
+        val navBottomPx = context.resources.getDimensionPixelSize(
+            com.android.internal.R.dimen.navigation_bar_height
+        )
+        val topPx = gameBarLayoutParam.y.coerceIn(safeArea, (screenBounds.height() - navBottomPx - (390 * density).toInt()).coerceAtLeast(safeArea))
+
+        panelLayoutParam.apply {
+            width = panelWidthPx
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            gravity = Gravity.TOP or (if (circleOnLeft) Gravity.START else Gravity.END)
+            x = (12 * density).toInt()
+            y = topPx
+            flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            format = PixelFormat.TRANSLUCENT
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            preferMinimalPostProcessing = true
+        }
+        showPanel()
+        if (::gameBarView.isInitialized) {
+            gameBarView.visibility = View.GONE
         }
     }
 
@@ -332,11 +388,44 @@ class GameSidebar(
             runCatching { wm.removeViewImmediate(pv) }
             panelView = null
         }
-        if (::gameBarView.isInitialized) gameBarView.visibility = View.VISIBLE
     }
 
     private fun createPanelView(): ComposeView {
         return ComposeView(context).apply {
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_OUTSIDE) {
+                    val rawX = event.rawX
+                    val screenWidth = wm.maximumWindowMetrics.bounds.width()
+                    val insets = wm.currentWindowMetrics.windowInsets
+                    val navInsets = insets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.navigationBars())
+                    val cutoutInsets = insets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.displayCutout())
+                    val sideInset = if (circleOnLeft) {
+                        maxOf(navInsets.left, cutoutInsets.left)
+                    } else {
+                        maxOf(navInsets.right, cutoutInsets.right)
+                    }
+                    val density = context.resources.displayMetrics.density
+                    val extraOffsetDp = if (circleOnLeft) 12 else 30
+                    val dockTotalWidthPx = sideInset + ((60 + extraOffsetDp) * density).toInt()
+
+                    val isTouchOnDock = if (circleOnLeft) {
+                        rawX <= dockTotalWidthPx
+                    } else {
+                        rawX >= (screenWidth - dockTotalWidthPx)
+                    }
+
+                    if (!isTouchOnDock) {
+                        requestDismissPanel()
+                        val dismissIntent = Intent("com.libremobileos.sidebar.action.DISMISS_SIDEBAR").apply {
+                            setPackage("com.libremobileos.sidebar")
+                        }
+                        context.sendBroadcastAsUser(dismissIntent, UserHandle.ALL)
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
             repeatWhenAttached {
                 repeatOnLifecycle(Lifecycle.State.STARTED) {
                     setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -355,7 +444,6 @@ class GameSidebar(
 
     @Composable
     private fun PanelContent() {
-        val apps = remember { getQuickStartApps(context) }
         val dismissing by panelDismissing
 
         var entered by remember { mutableStateOf(false) }
@@ -365,9 +453,9 @@ class GameSidebar(
         val slideSign = if (circleOnLeft) -1f else 1f
 
         val slideOffset by animateFloatAsState(
-            targetValue = if (show) 0f else slideSign * 400f,
+            targetValue = if (show) 0f else slideSign * 350f,
             animationSpec = tween(
-                durationMillis = if (show) 350 else 250,
+                durationMillis = if (show) 320 else 220,
                 easing = if (show) FastOutSlowInEasing else FastOutLinearInEasing,
             ),
             label = "panel_slide",
@@ -378,81 +466,65 @@ class GameSidebar(
 
         val panelAlpha by animateFloatAsState(
             targetValue = if (show) 1f else 0f,
-            animationSpec = tween(if (show) 280 else 180),
+            animationSpec = tween(if (show) 260 else 160),
             label = "panel_alpha",
         )
 
         val panelScale by animateFloatAsState(
-            targetValue = if (show) 1f else 0.88f,
+            targetValue = if (show) 1f else 0.90f,
             animationSpec = tween(
-                durationMillis = if (show) 350 else 220,
+                durationMillis = if (show) 320 else 200,
                 easing = if (show) FastOutSlowInEasing else FastOutLinearInEasing,
             ),
             label = "panel_scale",
         )
 
         val density = LocalDensity.current
-        val barTopPx = gameBarLayoutParam.y
-        val barTopDp = with(density) { barTopPx.toDp() }
+        val screenHeightDp = with(density) { safeHeight.toDp() }
+        val isLandscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val navBottomDp = with(density) {
             context.resources.getDimensionPixelSize(
                 com.android.internal.R.dimen.navigation_bar_height
             ).toDp()
         }
-        val screenHeightDp = with(density) { safeHeight.toDp() }
-        val spaceBelow = (screenHeightDp - barTopDp - navBottomDp - 16.dp).coerceAtLeast(0.dp)
-        val spaceAbove = (barTopDp - navBottomDp - 16.dp).coerceAtLeast(0.dp)
-        val bottomAligned = spaceBelow < 240.dp && spaceAbove > spaceBelow
-        val panelMaxHeight = (if (bottomAligned) spaceAbove else spaceBelow).coerceIn(240.dp, 520.dp)
-        val alignment = when {
-            bottomAligned && circleOnLeft -> Alignment.BottomStart
-            bottomAligned && !circleOnLeft -> Alignment.BottomEnd
-            !bottomAligned && circleOnLeft -> Alignment.TopStart
-            else -> Alignment.TopEnd
+        val panelMaxHeight = if (isLandscape) {
+            (screenHeightDp - navBottomDp - 16.dp).coerceAtLeast(340.dp)
+        } else {
+            (screenHeightDp - 64.dp).coerceIn(360.dp, 600.dp)
         }
+
         val transformOriginX = if (circleOnLeft) 0f else 1f
-        val transformOriginY = if (bottomAligned) 1f else 0f
 
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { if (!dismissing) requestDismissPanel() },
-            contentAlignment = alignment,
+                .wrapContentSize()
+                .graphicsLayer {
+                    translationX = slideOffset
+                    alpha = panelAlpha
+                    scaleX = panelScale
+                    scaleY = panelScale
+                    transformOrigin = TransformOrigin(transformOriginX, 0f)
+                }
         ) {
-            val edgePadding = if (bottomAligned) navBottomDp + 8.dp else barTopDp
-            Box(
-                modifier = Modifier
-                    .padding(
-                        start = 12.dp,
-                        end = 12.dp,
-                        top = if (!bottomAligned) edgePadding else 0.dp,
-                        bottom = if (bottomAligned) edgePadding else 0.dp,
-                    )
-                    .graphicsLayer {
-                        translationX = slideOffset
-                        alpha = panelAlpha
-                        scaleX = panelScale
-                        scaleY = panelScale
-                        transformOrigin = TransformOrigin(transformOriginX, transformOriginY)
-                    }
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) {}
-            ) {
-                GamePanelCard(
-                    interactor = brightnessInteractor,
-                    fpsInteractor = fpsInteractor,
-                    apps = apps,
-                    gameModeUtils = gameModeUtils,
-                    systemSettings = settings,
-                    tileRepository = tileRepository,
-                    maxHeight = panelMaxHeight,
-                )
-            }
+            GamePanelCard(
+                interactor = brightnessInteractor,
+                fpsInteractor = fpsInteractor,
+                showFps = showFpsState.value,
+                fpsText = fpsTextState.value,
+                onToggleFps = {
+                    showFpsState.value = !showFpsState.value
+                    updateFpsTracking()
+                    appSettings.showFps = showFpsState.value
+                },
+                isLocked = isLockedState.value,
+                onToggleLock = {
+                    setGestureLock(!isLockedState.value)
+                },
+                gameModeUtils = gameModeUtils,
+                systemSettings = settings,
+                tileRepository = tileRepository,
+                maxHeight = panelMaxHeight,
+            )
         }
     }
 
@@ -504,17 +576,11 @@ class GameSidebar(
 
     private fun initActions() {
         if (shouldClose) return
-        gameBarView.visibility = View.VISIBLE
-        gameBarView.animate().alpha(1f).setDuration(300).start()
         circleOnLeft = appSettings.x < 0
         dockedOnLeftState.value = circleOnLeft
-        gameBarLayoutParam.y = appSettings.y
-        dockGameBar()
-        runCatching { wm.updateViewLayout(gameBarView, gameBarLayoutParam) }
         showFpsState.value = appSettings.showFps
         updateFpsTracking()
         setGestureLock(appSettings.lockGesture)
-        scheduleIdle()
     }
 
     private fun dockGameBar() {
@@ -552,7 +618,7 @@ class GameSidebar(
     private fun getQuickStartApps(context: Context): List<AppInfo> {
         val appList = mutableListOf<AppInfo>()
         val packageManager = context.packageManager
-        if (appSettings.quickStartApps.isNullOrEmpty() == false) {
+        if (!appSettings.quickStartApps.isNullOrEmpty()) {
             val packages = appSettings.quickStartApps.split(",")
             for (pkg in packages) {
                 try {
@@ -560,6 +626,22 @@ class GameSidebar(
                     val appName = packageManager.getApplicationLabel(appInfo).toString()
                     val icon = packageManager.getApplicationIcon(appInfo)
                     appList.add(AppInfo(name = appName, icon = icon, packageName = pkg))
+                } catch (_: Exception) {}
+            }
+        }
+        if (appList.isEmpty()) {
+            val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            val resolved = packageManager.queryIntentActivities(mainIntent, 0)
+            for (ri in resolved) {
+                val pkg = ri.activityInfo.packageName
+                if (pkg == context.packageName) continue
+                try {
+                    val appName = ri.loadLabel(packageManager).toString()
+                    val icon = ri.loadIcon(packageManager)
+                    appList.add(AppInfo(name = appName, icon = icon, packageName = pkg))
+                    if (appList.size >= 8) break
                 } catch (_: Exception) {}
             }
         }

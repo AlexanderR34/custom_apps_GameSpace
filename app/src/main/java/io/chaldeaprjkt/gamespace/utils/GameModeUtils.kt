@@ -58,7 +58,11 @@ class GameModeUtils @Inject constructor(private val context: Context) {
 
     fun setActiveGameMode(systemSettings: SystemSettings, mode: Int) {
         val packageName = activeGame?.packageName ?: return
-        manager?.setGameMode(packageName, mode)
+        try {
+            manager?.setGameMode(packageName, mode)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         activeGame = setGameModeFor(packageName, systemSettings, mode)
     }
 
