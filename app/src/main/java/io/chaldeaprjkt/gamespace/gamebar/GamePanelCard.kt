@@ -73,6 +73,7 @@ import io.chaldeaprjkt.gamespace.R
 import io.chaldeaprjkt.gamespace.data.SystemSettings
 import io.chaldeaprjkt.gamespace.gamebar.brightness.*
 import io.chaldeaprjkt.gamespace.gamebar.fps.*
+import io.chaldeaprjkt.gamespace.gamebar.media.*
 import io.chaldeaprjkt.gamespace.gamebar.tiles.*
 import io.chaldeaprjkt.gamespace.settings.SettingsActivity
 import io.chaldeaprjkt.gamespace.utils.GameModeUtils
@@ -93,6 +94,7 @@ private val TAG = "GamePanelCard"
 fun GamePanelCard(
     interactor: BrightnessInteractor,
     fpsInteractor: FpsInteractor,
+    mediaInteractor: MediaInteractor,
     showFps: Boolean = false,
     fpsText: String = "",
     onToggleFps: () -> Unit = {},
@@ -137,6 +139,7 @@ fun GamePanelCard(
             },
             interactor = interactor,
             fpsInteractor = fpsInteractor,
+            mediaInteractor = mediaInteractor,
             showFps = showFps,
             fpsText = fpsText,
             onToggleFps = onToggleFps,
@@ -157,6 +160,7 @@ fun GamePanelContent(
     onModeChange: (GameMode) -> Unit,
     interactor: BrightnessInteractor,
     fpsInteractor: FpsInteractor,
+    mediaInteractor: MediaInteractor,
     showFps: Boolean,
     fpsText: String,
     onToggleFps: () -> Unit,
@@ -202,6 +206,7 @@ fun GamePanelContent(
 
             PanelContent(
                 interactor = interactor,
+                mediaInteractor = mediaInteractor,
                 tileRepository = tileRepository,
                 currentMode = selectedMode,
                 onEditClick = { isEditing = true },
@@ -219,6 +224,7 @@ fun GamePanelContent(
 @Composable
 fun PanelContent(
     interactor: BrightnessInteractor,
+    mediaInteractor: MediaInteractor,
     tileRepository: TileRepository,
     currentMode: GameMode,
     onEditClick: () -> Unit,
@@ -235,6 +241,13 @@ fun PanelContent(
         modifier = modifier.padding(start = 4.dp, end = 4.dp, bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        if (tileRepository.isMediaCardVisible.value) {
+            MediaControlCard(
+                interactor = mediaInteractor,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
         if (tileRepository.isBrightnessVisible.value) {
             Row(
                 modifier = Modifier
@@ -636,6 +649,12 @@ fun TileEditPanel(
                 checked = tileRepository.isFpsGraphVisible.value,
                 onCheckedChange = { tileRepository.setFpsGraphEnabled(it) }
             )
+
+            SettingToggleRow(
+                title = stringResource(R.string.media_player),
+                checked = tileRepository.isMediaCardVisible.value,
+                onCheckedChange = { tileRepository.setMediaCardEnabled(it) }
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -946,8 +965,9 @@ fun TileButton(tile: TileAction, modifier: Modifier = Modifier) {
                 modifier = Modifier.size(22.dp),
             )
         }
+        val currentLabel by tile.observeLabel()
         Text(
-            text = tile.label,
+            text = currentLabel,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,

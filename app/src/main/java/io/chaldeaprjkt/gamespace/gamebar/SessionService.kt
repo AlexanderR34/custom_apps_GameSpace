@@ -41,6 +41,7 @@ import io.chaldeaprjkt.gamespace.data.SystemSettings
 import io.chaldeaprjkt.gamespace.data.UserGame
 import io.chaldeaprjkt.gamespace.gamebar.brightness.BrightnessInteractor
 import io.chaldeaprjkt.gamespace.gamebar.fps.FpsInteractor
+import io.chaldeaprjkt.gamespace.gamebar.media.MediaInteractor
 import io.chaldeaprjkt.gamespace.gamebar.mapper.MapperController
 import io.chaldeaprjkt.gamespace.gamebar.tiles.TileRepository
 import io.chaldeaprjkt.gamespace.utils.GameModeUtils
@@ -58,6 +59,7 @@ class SessionService : Hilt_SessionService() {
     @Inject lateinit var danmakuService: DanmakuService
     @Inject lateinit var brightnessInteractor: BrightnessInteractor
     @Inject lateinit var fpsInteractor: FpsInteractor
+    @Inject lateinit var mediaInteractor: MediaInteractor
     @Inject lateinit var tileRepository: TileRepository
     @Inject lateinit var gson: Gson
 
@@ -81,6 +83,11 @@ class SessionService : Hilt_SessionService() {
                 }
                 ACTION_DISMISS_GAME_PANEL -> {
                     sidebar.requestDismissPanel()
+                }
+                ACTION_GAME_STOP -> {
+                    Log.i(TAG, "Received ACTION_GAME_STOP broadcast, stopping session")
+                    stopGameSession()
+                    stopSelf()
                 }
             }
         }
@@ -118,6 +125,7 @@ class SessionService : Hilt_SessionService() {
             danmakuService = danmakuService,
             brightnessInteractor = brightnessInteractor,
             fpsInteractor = fpsInteractor,
+            mediaInteractor = mediaInteractor,
             gameModeUtils = gameModeUtils,
             settings = settings,
             tileRepository = tileRepository,
@@ -129,6 +137,7 @@ class SessionService : Hilt_SessionService() {
         val filter = IntentFilter().apply {
             addAction(ACTION_SHOW_GAME_PANEL)
             addAction(ACTION_DISMISS_GAME_PANEL)
+            addAction(ACTION_GAME_STOP)
         }
         registerReceiver(sidebarCommandReceiver, filter, Context.RECEIVER_EXPORTED)
     }
@@ -194,6 +203,7 @@ class SessionService : Hilt_SessionService() {
         }
         sendBroadcastAsUser(gameIntent, UserHandle.ALL)
 
+        mediaInteractor.start()
         callListener.init()
     }
 
@@ -215,6 +225,7 @@ class SessionService : Hilt_SessionService() {
         sendBroadcastAsUser(gameIntent, UserHandle.ALL)
 
         sidebar.onGameLeave()
+        mediaInteractor.stop()
         session.unregister()
         callListener.destroy()
         restoreAutoDnd()
@@ -278,5 +289,6 @@ class SessionService : Hilt_SessionService() {
         const val EXTRA_PACKAGE_NAME = "package_name"
         const val ACTION_SHOW_GAME_PANEL = "io.chaldeaprjkt.gamespace.action.SHOW_GAME_PANEL"
         const val ACTION_DISMISS_GAME_PANEL = "io.chaldeaprjkt.gamespace.action.DISMISS_GAME_PANEL"
+        const val ACTION_GAME_STOP = "io.chaldeaprjkt.gamespace.action.GAME_STOP"
     }
 }

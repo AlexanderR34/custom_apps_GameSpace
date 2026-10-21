@@ -42,6 +42,7 @@ interface TileAction {
     val icon: Int
     val isEnabled: Boolean
     @Composable fun observeEnabled(): State<Boolean>
+    @Composable fun observeLabel(): State<String> = rememberUpdatedState(label)
     fun toggle()
 }
 
@@ -83,6 +84,7 @@ class PlatformTile(
     override val label: String get() = labelState.value
     override val isEnabled: Boolean get() = activeState.value
     @Composable override fun observeEnabled(): State<Boolean> = activeState
+    @Composable override fun observeLabel(): State<String> = labelState
 
     override fun toggle() {
         platform.toggle(feature)
@@ -95,11 +97,75 @@ class PlatformTile(
     }
 }
 
+class RefreshRateTile(
+    override val id: String,
+    override val icon: Int,
+    private val context: Context,
+) : TileAction {
+    private val rates: List<Int> by lazy {
+        try {
+            val display = context.display
+            val supported = display?.supportedModes?.map { Math.round(it.refreshRate) }?.distinct()?.sortedDescending()
+            if (!supported.isNullOrEmpty()) supported else listOf(120, 90, 60)
+        } catch (e: Exception) {
+            listOf(120, 90, 60)
+        }
+    }
+
+    private fun getCurrentRate(): Int {
+        val peak = Settings.System.getFloat(
+            context.contentResolver,
+            Settings.System.PEAK_REFRESH_RATE,
+            rates.first().toFloat()
+        ).toInt()
+        return if (rates.contains(peak)) peak else (rates.firstOrNull() ?: 60)
+    }
+
+    private val currentRateState = mutableStateOf(getCurrentRate())
+    val labelState = mutableStateOf("${currentRateState.value}Hz")
+
+    override val label: String get() = labelState.value
+    override val isEnabled: Boolean get() = currentRateState.value > 60
+    @Composable override fun observeEnabled(): State<Boolean> = rememberUpdatedState(isEnabled)
+    @Composable override fun observeLabel(): State<String> = labelState
+
+    override fun toggle() {
+        val current = getCurrentRate()
+        val currentIndex = rates.indexOf(current)
+        val nextIndex = if (currentIndex != -1 && currentIndex < rates.size - 1) {
+            currentIndex + 1
+        } else {
+            0
+        }
+        val nextRate = rates[nextIndex]
+
+        try {
+            Settings.System.putFloat(
+                context.contentResolver,
+                Settings.System.PEAK_REFRESH_RATE,
+                nextRate.toFloat()
+            )
+            Settings.System.putFloat(
+                context.contentResolver,
+                Settings.System.MIN_REFRESH_RATE,
+                nextRate.toFloat()
+            )
+        } catch (e: Exception) {
+            // Log or fallback
+        }
+
+        currentRateState.value = nextRate
+        labelState.value = "${nextRate}Hz"
+        Toast.makeText(context, "${nextRate}Hz", Toast.LENGTH_SHORT).show()
+    }
+}
+
 @Singleton
 class TileRepository @Inject constructor(
     private val context: Context,
     private val appSettings: AppSettings,
     private val systemSettings: SystemSettings,
+    private val screenUtils: io.chaldeaprjkt.gamespace.utils.ScreenUtils,
 ) {
     private lateinit var platform: AxPlatformClient
 
@@ -126,6 +192,7 @@ class TileRepository @Inject constructor(
 
     val isBrightnessVisible: MutableState<Boolean> = mutableStateOf(appSettings.brightnessEnabled)
     val isFpsGraphVisible: MutableState<Boolean> = mutableStateOf(appSettings.fpsGraphEnabled)
+    val isMediaCardVisible: MutableState<Boolean> = mutableStateOf(appSettings.mediaCardEnabled)
     fun init(platform: AxPlatformClient) {
         this.platform = platform
 
@@ -165,6 +232,11 @@ class TileRepository @Inject constructor(
     fun setFpsGraphEnabled(enabled: Boolean) {
         isFpsGraphVisible.value = enabled
         appSettings.fpsGraphEnabled = enabled
+    }
+
+    fun setMediaCardEnabled(enabled: Boolean) {
+        isMediaCardVisible.value = enabled
+        appSettings.mediaCardEnabled = enabled
     }
 
     private fun saveTileOrder() {
@@ -335,29 +407,14 @@ class TileRepository @Inject constructor(
             context.getString(R.string.tile_mic_privacy),
         ))
         add(platformTile(
-            AxPlatformClient.FEATURE_WORK_PROFILE,
-            R.drawable.materialsymbols_ic_work_rounded_filled,
-            context.getString(R.string.tile_work_profile),
-        ))
-        add(platformTile(
             AxPlatformClient.FEATURE_USB_TETHER,
             R.drawable.materialsymbols_ic_usb_rounded_filled,
             context.getString(R.string.tile_usb_tether),
         ))
         add(platformTile(
-            AxPlatformClient.FEATURE_DREAM,
-            R.drawable.materialsymbols_ic_bedtime_rounded_filled,
-            context.getString(R.string.tile_dream),
-        ))
-        add(platformTile(
             AxPlatformClient.FEATURE_READING_MODE,
             R.drawable.materialsymbols_ic_menu_book_rounded_filled,
             context.getString(R.string.tile_reading_mode),
-        ))
-        add(platformTile(
-            AxPlatformClient.FEATURE_POWER_SHARE,
-            R.drawable.materialsymbols_ic_battery_charging_full_rounded_filled,
-            context.getString(R.string.tile_power_share),
         ))
         add(platformTile(
             AxPlatformClient.FEATURE_CAFFEINE,
@@ -375,25 +432,20 @@ class TileRepository @Inject constructor(
             context.getString(R.string.tile_cast),
         ))
         add(platformTile(
-            AxPlatformClient.FEATURE_PROFILES,
-            R.drawable.materialsymbols_ic_manage_accounts_rounded_filled,
-            context.getString(R.string.tile_profiles),
-        ))
-        add(platformTile(
-            AxPlatformClient.FEATURE_SMART_PIXELS,
-            R.drawable.materialsymbols_ic_grid_on_rounded_filled,
-            context.getString(R.string.tile_smart_pixels),
-        ))
-        add(platformTile(
             AxPlatformClient.FEATURE_SCREEN_RECORD,
             R.drawable.materialsymbols_ic_videocam_rounded_filled,
             context.getString(R.string.tile_screen_record),
         ))
-        add(platformTile(
-            AxPlatformClient.FEATURE_SCREENSHOT,
-            R.drawable.materialsymbols_ic_screenshot_rounded_filled,
-            context.getString(R.string.tile_screenshot),
-        ))
+        add(
+            FixedActionTile(
+                id = AxPlatformClient.FEATURE_SCREENSHOT,
+                label = context.getString(R.string.tile_screenshot),
+                icon = R.drawable.materialsymbols_ic_screenshot_rounded_filled,
+                action = {
+                    screenUtils.takeScreenshot()
+                }
+            )
+        )
 
         add(
             ToggleableTile(
@@ -453,6 +505,14 @@ class TileRepository @Inject constructor(
                     }
                     context.startActivity(intent)
                 }
+            )
+        )
+
+        add(
+            RefreshRateTile(
+                id = "refresh_rate",
+                icon = R.drawable.ic_speed,
+                context = context,
             )
         )
 

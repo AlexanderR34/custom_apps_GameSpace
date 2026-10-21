@@ -27,6 +27,7 @@ import io.chaldeaprjkt.gamespace.data.GameSession
 import io.chaldeaprjkt.gamespace.data.SystemSettings
 import io.chaldeaprjkt.gamespace.gamebar.brightness.*
 import io.chaldeaprjkt.gamespace.gamebar.fps.FpsInteractor
+import io.chaldeaprjkt.gamespace.gamebar.media.MediaInteractor
 import io.chaldeaprjkt.gamespace.gamebar.tiles.TileRepository
 import io.chaldeaprjkt.gamespace.utils.GameModeUtils
 import io.chaldeaprjkt.gamespace.utils.ScreenUtils
@@ -80,6 +81,11 @@ object MainModule {
     @Singleton
     fun provideFpsInteractor(@ApplicationContext context: Context): FpsInteractor =
         FpsInteractor(context)
+
+    @Provides
+    @Singleton
+    fun provideMediaInteractor(@ApplicationContext context: Context): MediaInteractor =
+        MediaInteractor(context)
         
     @Provides
     @Singleton
@@ -87,5 +93,6 @@ object MainModule {
         @ApplicationContext context: Context,
         appSettings: AppSettings,
         systemSettings: SystemSettings,
-    ): TileRepository = TileRepository(context, appSettings, systemSettings)
+        screenUtils: ScreenUtils,
+    ): TileRepository = TileRepository(context, appSettings, systemSettings, screenUtils)
 }

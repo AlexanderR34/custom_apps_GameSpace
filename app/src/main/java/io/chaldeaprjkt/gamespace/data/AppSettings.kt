@@ -78,6 +78,10 @@ class AppSettings @Inject constructor(private val context: Context) {
     var fpsGraphEnabled: Boolean
         get() = db.getBoolean(KEY_FPS_GRAPH_ENABLED, true)
         set(value) = db.edit().putBoolean(KEY_FPS_GRAPH_ENABLED, value).apply()
+
+    var mediaCardEnabled: Boolean
+        get() = db.getBoolean(KEY_MEDIA_CARD_ENABLED, true)
+        set(value) = db.edit().putBoolean(KEY_MEDIA_CARD_ENABLED, value).apply()
         
     var quickStartApps: String
         get() = db.getString(KEY_QUICK_START_APPS, "") ?: ""
@@ -119,6 +123,7 @@ class AppSettings @Inject constructor(private val context: Context) {
         const val KEY_TILE_ORDER = "tile_order"
         const val KEY_BRIGHTNESS_ENABLED = "brightness_enabled"
         const val KEY_FPS_GRAPH_ENABLED = "fps_graph_enabled"
+        const val KEY_MEDIA_CARD_ENABLED = "media_card_enabled"
         const val KEY_QUICK_START_APPS = "quick_start_apps"
         const val KEY_CALL_OVERLAY_ENABLED = "call_overlay_enabled"
         const val KEY_ICON_IDLE_ALPHA = "gamespace_icon_idle_alpha"

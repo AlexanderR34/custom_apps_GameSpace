@@ -60,6 +60,7 @@ import io.chaldeaprjkt.gamespace.data.AppSettings
 import io.chaldeaprjkt.gamespace.data.SystemSettings
 import io.chaldeaprjkt.gamespace.gamebar.brightness.*
 import io.chaldeaprjkt.gamespace.gamebar.fps.*
+import io.chaldeaprjkt.gamespace.gamebar.media.MediaInteractor
 import io.chaldeaprjkt.gamespace.gamebar.mapper.MapperController
 import io.chaldeaprjkt.gamespace.gamebar.tiles.*
 import io.chaldeaprjkt.gamespace.utils.*
@@ -75,6 +76,7 @@ class GameSidebar(
     private val danmakuService: DanmakuService,
     private val brightnessInteractor: BrightnessInteractor,
     private val fpsInteractor: FpsInteractor,
+    private val mediaInteractor: MediaInteractor,
     private val gameModeUtils: GameModeUtils,
     private val settings: SystemSettings,
     private val tileRepository: TileRepository,
@@ -509,6 +511,7 @@ class GameSidebar(
             GamePanelCard(
                 interactor = brightnessInteractor,
                 fpsInteractor = fpsInteractor,
+                mediaInteractor = mediaInteractor,
                 showFps = showFpsState.value,
                 fpsText = fpsTextState.value,
                 onToggleFps = {

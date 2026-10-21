@@ -73,6 +73,8 @@
     <string name="panel_options">Opciones del Panel</string>
     <string name="brightness_slider">Control deslizante de brillo</string>
     <string name="fps_graph">Gráfico de FPS</string>
+    <string name="media_player">Reproductor multimedia</string>
+    <string name="no_media_playing">Sin reproducción</string>
     <string name="selected_tiles">Mosaicos seleccionados</string>
     <string name="available_tiles">Mosaicos disponibles</string>
     <string name="drag_tiles_here">Arrastra los mosaicos aquí</string>

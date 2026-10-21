@@ -5,15 +5,24 @@ import android.app.UiModeManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
+import android.content.ComponentName
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.database.ContentObserver
+import android.hardware.SensorPrivacyManager
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.location.LocationManager
 import android.net.ConnectivityManager
+import android.net.NetworkPolicyManager
+import android.net.TetheringManager
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.nfc.NfcAdapter
+import android.os.BatteryManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -34,6 +43,7 @@ class AxPlatformClient private constructor() {
     private var context: Context? = null
     private val handler = Handler(Looper.getMainLooper())
     private var torchEnabled = false
+    private var isScreenRecording = false
     private var isInitialized = false
 
     private val torchCallback = object : CameraManager.TorchCallback() {
@@ -48,6 +58,9 @@ class AxPlatformClient private constructor() {
             when (intent.action) {
                 WifiManager.WIFI_STATE_CHANGED_ACTION -> {
                     notifyFeature(FEATURE_WIFI, isFeatureActive(FEATURE_WIFI))
+                }
+                WifiManager.WIFI_AP_STATE_CHANGED_ACTION -> {
+                    notifyFeature(FEATURE_HOTSPOT, isFeatureActive(FEATURE_HOTSPOT))
                 }
                 BluetoothAdapter.ACTION_STATE_CHANGED -> {
                     notifyFeature(FEATURE_BLUETOOTH, isFeatureActive(FEATURE_BLUETOOTH))
@@ -68,6 +81,14 @@ class AxPlatformClient private constructor() {
                 UiModeManager.ACTION_EXIT_CAR_MODE -> {
                     notifyFeature(FEATURE_DARK_MODE, isFeatureActive(FEATURE_DARK_MODE))
                 }
+                "com.android.systemui.screenrecord.UPDATE_STATE" -> {
+                    isScreenRecording = intent.getBooleanExtra("extra_state", false)
+                    notifyFeature(FEATURE_SCREEN_RECORD, isScreenRecording)
+                }
+                TetheringManager.ACTION_TETHER_STATE_CHANGED -> {
+                    notifyFeature(FEATURE_HOTSPOT, isFeatureActive(FEATURE_HOTSPOT))
+                    notifyFeature(FEATURE_USB_TETHER, isFeatureActive(FEATURE_USB_TETHER))
+                }
             }
         }
     }
@@ -80,11 +101,16 @@ class AxPlatformClient private constructor() {
         try {
             val filter = IntentFilter().apply {
                 addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+                addAction(WifiManager.WIFI_AP_STATE_CHANGED_ACTION)
                 addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
                 addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
                 addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
                 addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
                 addAction(LocationManager.MODE_CHANGED_ACTION)
+                addAction(UiModeManager.ACTION_ENTER_CAR_MODE)
+                addAction(UiModeManager.ACTION_EXIT_CAR_MODE)
+                addAction("com.android.systemui.screenrecord.UPDATE_STATE")
+                addAction(TetheringManager.ACTION_TETHER_STATE_CHANGED)
             }
             appCtx.registerReceiver(systemReceiver, filter, Context.RECEIVER_EXPORTED)
         } catch (e: Exception) {
@@ -99,18 +125,81 @@ class AxPlatformClient private constructor() {
         }
 
         try {
-            val rotationObserver = object : ContentObserver(handler) {
-                override fun onChange(selfChange: Boolean) {
+            val settingsObserver = object : ContentObserver(handler) {
+                override fun onChange(selfChange: Boolean, uri: Uri?) {
                     notifyFeature(FEATURE_ROTATION, isFeatureActive(FEATURE_ROTATION))
+                    notifyFeature(FEATURE_DARK_MODE, isFeatureActive(FEATURE_DARK_MODE))
+                    notifyFeature(FEATURE_NIGHT_LIGHT, isFeatureActive(FEATURE_NIGHT_LIGHT))
+                    notifyFeature(FEATURE_AOD, isFeatureActive(FEATURE_AOD))
+                    notifyFeature(FEATURE_COLOR_INVERSION, isFeatureActive(FEATURE_COLOR_INVERSION))
+                    notifyFeature(FEATURE_COLOR_CORRECTION, isFeatureActive(FEATURE_COLOR_CORRECTION))
+                    notifyFeature(FEATURE_REDUCE_BRIGHTNESS, isFeatureActive(FEATURE_REDUCE_BRIGHTNESS))
+                    notifyFeature(FEATURE_ONE_HANDED_MODE, isFeatureActive(FEATURE_ONE_HANDED_MODE))
+                    notifyFeature(FEATURE_HEADS_UP, isFeatureActive(FEATURE_HEADS_UP))
+                    notifyFeature(FEATURE_READING_MODE, isFeatureActive(FEATURE_READING_MODE))
+                    notifyFeature(FEATURE_CAFFEINE, isFeatureActive(FEATURE_CAFFEINE))
+                    notifyFeature(FEATURE_BATTERY_SAVER, isFeatureActive(FEATURE_BATTERY_SAVER))
                 }
             }
-            appCtx.contentResolver.registerContentObserver(
+
+            val cr = appCtx.contentResolver
+            cr.registerContentObserver(
                 Settings.System.getUriFor(Settings.System.ACCELEROMETER_ROTATION),
                 false,
-                rotationObserver
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Secure.getUriFor(Settings.Secure.UI_NIGHT_MODE),
+                false,
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Secure.getUriFor(Settings.Secure.NIGHT_DISPLAY_ACTIVATED),
+                false,
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Secure.getUriFor(Settings.Secure.DOZE_ALWAYS_ON),
+                false,
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Secure.getUriFor(Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED),
+                false,
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Secure.getUriFor(Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED),
+                false,
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Secure.getUriFor("reduce_bright_colors_activated"),
+                false,
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Secure.getUriFor("one_handed_mode_enabled"),
+                false,
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.HEADS_UP_NOTIFICATIONS_ENABLED),
+                false,
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.STAY_ON_WHILE_PLUGGED_IN),
+                false,
+                settingsObserver
+            )
+            cr.registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.LOW_POWER_MODE),
+                false,
+                settingsObserver
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error registering rotation observer", e)
+            Log.e(TAG, "Error registering content observers", e)
         }
 
         isInitialized = true
@@ -143,8 +232,20 @@ class AxPlatformClient private constructor() {
         }
     }
 
+    private fun getFlashCameraId(cm: CameraManager): String? {
+        return try {
+            cm.cameraIdList.firstOrNull { id ->
+                cm.getCameraCharacteristics(id)
+                    .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: cm.cameraIdList.firstOrNull()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun isFeatureActive(feature: String): Boolean {
         val ctx = context ?: return false
+        val cr = ctx.contentResolver
         return try {
             when (feature) {
                 FEATURE_WIFI -> {
@@ -161,21 +262,20 @@ class AxPlatformClient private constructor() {
                     filter != NotificationManager.INTERRUPTION_FILTER_ALL && filter != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
                 }
                 FEATURE_ROTATION -> {
-                    Settings.System.getInt(ctx.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
+                    Settings.System.getInt(cr, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
                 }
                 FEATURE_MOBILE_DATA -> {
                     val tm = ctx.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
                     tm?.isDataEnabled == true
                 }
                 FEATURE_AIRPLANE_MODE -> {
-                    Settings.Global.getInt(ctx.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+                    Settings.Global.getInt(cr, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
                 }
                 FEATURE_FLASHLIGHT -> {
                     torchEnabled
                 }
                 FEATURE_DARK_MODE -> {
-                    val uiModeManager = ctx.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
-                    (ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                    (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
                 }
                 FEATURE_LOCATION -> {
                     val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
@@ -183,7 +283,7 @@ class AxPlatformClient private constructor() {
                 }
                 FEATURE_BATTERY_SAVER -> {
                     val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager
-                    pm?.isPowerSaveMode == true
+                    pm?.isPowerSaveMode == true || Settings.Global.getInt(cr, Settings.Global.LOW_POWER_MODE, 0) == 1
                 }
                 FEATURE_HOTSPOT -> {
                     val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -193,16 +293,52 @@ class AxPlatformClient private constructor() {
                     NfcAdapter.getDefaultAdapter(ctx)?.isEnabled == true
                 }
                 FEATURE_NIGHT_LIGHT -> {
-                    Settings.Secure.getInt(ctx.contentResolver, Settings.Secure.NIGHT_DISPLAY_ACTIVATED, 0) == 1
+                    Settings.Secure.getInt(cr, Settings.Secure.NIGHT_DISPLAY_ACTIVATED, 0) == 1
                 }
                 FEATURE_AOD -> {
-                    Settings.Secure.getInt(ctx.contentResolver, Settings.Secure.DOZE_ALWAYS_ON, 0) == 1
+                    Settings.Secure.getInt(cr, Settings.Secure.DOZE_ALWAYS_ON, 0) == 1
+                }
+                FEATURE_DATA_SAVER -> {
+                    NetworkPolicyManager.from(ctx).restrictBackground
                 }
                 FEATURE_COLOR_INVERSION -> {
-                    Settings.Secure.getInt(ctx.contentResolver, Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, 0) == 1
+                    Settings.Secure.getInt(cr, Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, 0) == 1
+                }
+                FEATURE_COLOR_CORRECTION -> {
+                    Settings.Secure.getInt(cr, Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED, 0) == 1
+                }
+                FEATURE_REDUCE_BRIGHTNESS -> {
+                    Settings.Secure.getInt(cr, "reduce_bright_colors_activated", 0) == 1
+                }
+                FEATURE_ONE_HANDED_MODE -> {
+                    Settings.Secure.getInt(cr, "one_handed_mode_enabled", 0) == 1
                 }
                 FEATURE_HEADS_UP -> {
-                    Settings.Global.getInt(ctx.contentResolver, Settings.Global.HEADS_UP_NOTIFICATIONS_ENABLED, 1) == 1
+                    Settings.Global.getInt(cr, Settings.Global.HEADS_UP_NOTIFICATIONS_ENABLED, 1) == 1
+                }
+                FEATURE_AUTO_SYNC -> {
+                    ContentResolver.getMasterSyncAutomatically()
+                }
+                FEATURE_CAMERA_PRIVACY -> {
+                    val spm = ctx.getSystemService(SensorPrivacyManager::class.java)
+                    spm?.isSensorPrivacyEnabled(SensorPrivacyManager.Sensors.CAMERA) == true
+                }
+                FEATURE_MIC_PRIVACY -> {
+                    val spm = ctx.getSystemService(SensorPrivacyManager::class.java)
+                    spm?.isSensorPrivacyEnabled(SensorPrivacyManager.Sensors.MICROPHONE) == true
+                }
+                FEATURE_USB_TETHER -> {
+                    val tm = ctx.getSystemService(TetheringManager::class.java)
+                    tm?.tetheredIfaces?.any { it.startsWith("rndis") || it.startsWith("usb") } == true
+                }
+                FEATURE_READING_MODE -> {
+                    Settings.Secure.getInt(cr, Settings.Secure.NIGHT_DISPLAY_ACTIVATED, 0) == 1
+                }
+                FEATURE_CAFFEINE -> {
+                    Settings.Global.getInt(cr, Settings.Global.STAY_ON_WHILE_PLUGGED_IN, 0) != 0
+                }
+                FEATURE_SCREEN_RECORD -> {
+                    isScreenRecording
                 }
                 else -> false
             }
@@ -214,6 +350,7 @@ class AxPlatformClient private constructor() {
 
     fun toggle(feature: String) {
         val ctx = context ?: return
+        val cr = ctx.contentResolver
         try {
             when (feature) {
                 FEATURE_WIFI -> {
@@ -247,9 +384,9 @@ class AxPlatformClient private constructor() {
                     }
                 }
                 FEATURE_ROTATION -> {
-                    val cur = Settings.System.getInt(ctx.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0)
+                    val cur = Settings.System.getInt(cr, Settings.System.ACCELEROMETER_ROTATION, 0)
                     val target = if (cur == 1) 0 else 1
-                    Settings.System.putInt(ctx.contentResolver, Settings.System.ACCELEROMETER_ROTATION, target)
+                    Settings.System.putInt(cr, Settings.System.ACCELEROMETER_ROTATION, target)
                     notifyFeature(feature, target == 1)
                 }
                 FEATURE_MOBILE_DATA -> {
@@ -262,15 +399,22 @@ class AxPlatformClient private constructor() {
                 }
                 FEATURE_AIRPLANE_MODE -> {
                     val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                    val isAir = isFeatureActive(FEATURE_AIRPLANE_MODE)
-                    val target = !isAir
-                    cm?.setAirplaneMode(target)
+                    val target = !isFeatureActive(FEATURE_AIRPLANE_MODE)
+                    try {
+                        cm?.setAirplaneMode(target)
+                    } catch (e: Exception) {
+                        Settings.Global.putInt(cr, Settings.Global.AIRPLANE_MODE_ON, if (target) 1 else 0)
+                        val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).apply {
+                            putExtra("state", target)
+                        }
+                        ctx.sendBroadcast(intent)
+                    }
                     notifyFeature(feature, target)
                 }
                 FEATURE_FLASHLIGHT -> {
                     val cameraManager = ctx.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
-                    val id = cameraManager?.cameraIdList?.firstOrNull()
-                    if (id != null) {
+                    val id = cameraManager?.let { getFlashCameraId(it) }
+                    if (id != null && cameraManager != null) {
                         val target = !torchEnabled
                         cameraManager.setTorchMode(id, target)
                         torchEnabled = target
@@ -295,11 +439,29 @@ class AxPlatformClient private constructor() {
                 }
                 FEATURE_BATTERY_SAVER -> {
                     val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager
-                    pm?.let {
-                        val target = !it.isPowerSaveMode
-                        it.setPowerSaveModeEnabled(target)
-                        notifyFeature(feature, target)
+                    val target = !isFeatureActive(FEATURE_BATTERY_SAVER)
+                    try {
+                        pm?.setPowerSaveModeEnabled(target)
+                    } catch (e: Exception) {
+                        Settings.Global.putInt(cr, Settings.Global.LOW_POWER_MODE, if (target) 1 else 0)
                     }
+                    notifyFeature(feature, target)
+                }
+                FEATURE_HOTSPOT -> {
+                    val tm = ctx.getSystemService(TetheringManager::class.java)
+                    val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                    val isApActive = wm?.isWifiApEnabled == true
+                    val target = !isApActive
+                    if (isApActive) {
+                        tm?.stopTethering(TetheringManager.TETHERING_WIFI)
+                    } else {
+                        tm?.startTethering(
+                            TetheringManager.TETHERING_WIFI,
+                            { it.run() },
+                            object : TetheringManager.StartTetheringCallback {}
+                        )
+                    }
+                    notifyFeature(feature, target)
                 }
                 FEATURE_NFC -> {
                     val nfc = NfcAdapter.getDefaultAdapter(ctx)
@@ -310,28 +472,127 @@ class AxPlatformClient private constructor() {
                     }
                 }
                 FEATURE_NIGHT_LIGHT -> {
-                    val cur = Settings.Secure.getInt(ctx.contentResolver, Settings.Secure.NIGHT_DISPLAY_ACTIVATED, 0)
+                    val cur = Settings.Secure.getInt(cr, Settings.Secure.NIGHT_DISPLAY_ACTIVATED, 0)
                     val target = if (cur == 1) 0 else 1
-                    Settings.Secure.putInt(ctx.contentResolver, Settings.Secure.NIGHT_DISPLAY_ACTIVATED, target)
+                    Settings.Secure.putInt(cr, Settings.Secure.NIGHT_DISPLAY_ACTIVATED, target)
                     notifyFeature(feature, target == 1)
                 }
                 FEATURE_AOD -> {
-                    val cur = Settings.Secure.getInt(ctx.contentResolver, Settings.Secure.DOZE_ALWAYS_ON, 0)
+                    val cur = Settings.Secure.getInt(cr, Settings.Secure.DOZE_ALWAYS_ON, 0)
                     val target = if (cur == 1) 0 else 1
-                    Settings.Secure.putInt(ctx.contentResolver, Settings.Secure.DOZE_ALWAYS_ON, target)
+                    Settings.Secure.putInt(cr, Settings.Secure.DOZE_ALWAYS_ON, target)
                     notifyFeature(feature, target == 1)
                 }
+                FEATURE_DATA_SAVER -> {
+                    val npm = NetworkPolicyManager.from(ctx)
+                    val target = !npm.restrictBackground
+                    npm.restrictBackground = target
+                    notifyFeature(feature, target)
+                }
                 FEATURE_COLOR_INVERSION -> {
-                    val cur = Settings.Secure.getInt(ctx.contentResolver, Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, 0)
+                    val cur = Settings.Secure.getInt(cr, Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, 0)
                     val target = if (cur == 1) 0 else 1
-                    Settings.Secure.putInt(ctx.contentResolver, Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, target)
+                    Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED, target)
+                    notifyFeature(feature, target == 1)
+                }
+                FEATURE_COLOR_CORRECTION -> {
+                    val cur = Settings.Secure.getInt(cr, Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED, 0)
+                    val target = if (cur == 1) 0 else 1
+                    Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED, target)
+                    notifyFeature(feature, target == 1)
+                }
+                FEATURE_REDUCE_BRIGHTNESS -> {
+                    val cur = Settings.Secure.getInt(cr, "reduce_bright_colors_activated", 0)
+                    val target = if (cur == 1) 0 else 1
+                    Settings.Secure.putInt(cr, "reduce_bright_colors_activated", target)
+                    notifyFeature(feature, target == 1)
+                }
+                FEATURE_ONE_HANDED_MODE -> {
+                    val cur = Settings.Secure.getInt(cr, "one_handed_mode_enabled", 0)
+                    val target = if (cur == 1) 0 else 1
+                    Settings.Secure.putInt(cr, "one_handed_mode_enabled", target)
                     notifyFeature(feature, target == 1)
                 }
                 FEATURE_HEADS_UP -> {
-                    val cur = Settings.Global.getInt(ctx.contentResolver, Settings.Global.HEADS_UP_NOTIFICATIONS_ENABLED, 1)
+                    val cur = Settings.Global.getInt(cr, Settings.Global.HEADS_UP_NOTIFICATIONS_ENABLED, 1)
                     val target = if (cur == 1) 0 else 1
-                    Settings.Global.putInt(ctx.contentResolver, Settings.Global.HEADS_UP_NOTIFICATIONS_ENABLED, target)
+                    Settings.Global.putInt(cr, Settings.Global.HEADS_UP_NOTIFICATIONS_ENABLED, target)
                     notifyFeature(feature, target == 1)
+                }
+                FEATURE_AUTO_SYNC -> {
+                    val target = !ContentResolver.getMasterSyncAutomatically()
+                    ContentResolver.setMasterSyncAutomatically(target)
+                    notifyFeature(feature, target)
+                }
+                FEATURE_CAMERA_PRIVACY -> {
+                    val spm = ctx.getSystemService(SensorPrivacyManager::class.java)
+                    spm?.let {
+                        val target = !it.isSensorPrivacyEnabled(SensorPrivacyManager.Sensors.CAMERA)
+                        it.setSensorPrivacy(SensorPrivacyManager.Sources.QS_TILE, SensorPrivacyManager.Sensors.CAMERA, target)
+                        notifyFeature(feature, target)
+                    }
+                }
+                FEATURE_MIC_PRIVACY -> {
+                    val spm = ctx.getSystemService(SensorPrivacyManager::class.java)
+                    spm?.let {
+                        val target = !it.isSensorPrivacyEnabled(SensorPrivacyManager.Sensors.MICROPHONE)
+                        it.setSensorPrivacy(SensorPrivacyManager.Sources.QS_TILE, SensorPrivacyManager.Sensors.MICROPHONE, target)
+                        notifyFeature(feature, target)
+                    }
+                }
+                FEATURE_USB_TETHER -> {
+                    val tm = ctx.getSystemService(TetheringManager::class.java)
+                    val isActive = isFeatureActive(FEATURE_USB_TETHER)
+                    tm?.setUsbTethering(!isActive)
+                    notifyFeature(feature, !isActive)
+                }
+                FEATURE_READING_MODE -> {
+                    val cur = Settings.Secure.getInt(cr, Settings.Secure.NIGHT_DISPLAY_ACTIVATED, 0)
+                    val target = if (cur == 1) 0 else 1
+                    Settings.Secure.putInt(cr, Settings.Secure.NIGHT_DISPLAY_ACTIVATED, target)
+                    notifyFeature(feature, target == 1)
+                }
+                FEATURE_CAFFEINE -> {
+                    val cur = Settings.Global.getInt(cr, Settings.Global.STAY_ON_WHILE_PLUGGED_IN, 0)
+                    val target = if (cur != 0) 0 else (BatteryManager.BATTERY_PLUGGED_AC or BatteryManager.BATTERY_PLUGGED_USB or BatteryManager.BATTERY_PLUGGED_WIRELESS)
+                    Settings.Global.putInt(cr, Settings.Global.STAY_ON_WHILE_PLUGGED_IN, target)
+                    notifyFeature(feature, target != 0)
+                }
+                FEATURE_VPN -> {
+                    val intent = Intent(Settings.ACTION_VPN_SETTINGS).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    ctx.startActivity(intent)
+                }
+                FEATURE_CAST -> {
+                    val intent = Intent(Settings.ACTION_CAST_SETTINGS).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    ctx.startActivity(intent)
+                }
+                FEATURE_SCREEN_RECORD -> {
+                    val intent = Intent().apply {
+                        component = ComponentName("com.android.systemui", "com.android.systemui.screenrecord.RecordingService")
+                        action = if (isScreenRecording) {
+                            "com.android.systemui.screenrecord.STOP"
+                        } else {
+                            "com.android.systemui.screenrecord.START"
+                        }
+                        if (!isScreenRecording) {
+                            putExtra("extra_resultCode", -1)
+                            putExtra("extra_useAudio", 0)
+                            putExtra("extra_showTaps", false)
+                        }
+                    }
+                    try {
+                        if (isScreenRecording) {
+                            ctx.startService(intent)
+                        } else {
+                            ctx.startForegroundService(intent)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error toggling screen record", e)
+                    }
                 }
                 else -> {
                     Log.w(TAG, "Unhandled toggle feature: $feature")
@@ -383,16 +644,11 @@ class AxPlatformClient private constructor() {
         const val FEATURE_AUTO_SYNC = "auto_sync"
         const val FEATURE_CAMERA_PRIVACY = "camera_privacy"
         const val FEATURE_MIC_PRIVACY = "mic_privacy"
-        const val FEATURE_WORK_PROFILE = "work_profile"
         const val FEATURE_USB_TETHER = "usb_tether"
-        const val FEATURE_DREAM = "dream"
         const val FEATURE_READING_MODE = "reading_mode"
-        const val FEATURE_POWER_SHARE = "power_share"
         const val FEATURE_CAFFEINE = "caffeine"
         const val FEATURE_VPN = "vpn"
         const val FEATURE_CAST = "cast"
-        const val FEATURE_PROFILES = "profiles"
-        const val FEATURE_SMART_PIXELS = "smart_pixels"
         const val FEATURE_SCREEN_RECORD = "screen_record"
         const val FEATURE_SCREENSHOT = "screenshot"
     }
